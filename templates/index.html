@@ -1,5 +1,5 @@
 {% include "header.html" %}
-<form id="pasta-form" action="{{ args.public_path_as_str() }}/upload" method="POST" enctype="multipart/form-data">
+<form id="pasta-form" action="{{ args.public_path_as_str() }}/uploaded" method="POST" enctype="multipart/form-data">
     <br>
     <div id="settings">
         <div>
@@ -266,6 +266,23 @@
 
     <input type="hidden" name="content" id="content">
 </form>
+{% if !args.no_file_upload %}
+<div id="selected-files-section" style="display: none;">
+    <h3>{{ "Selected files"|t }}</h3>
+    <div id="file-preview" class="file-preview"></div>
+    <div style="width: 100%; overflow-x: auto;">
+        <table style="width: 100%; min-width: 480px;">
+            <thead>
+                <tr>
+                    <th style="text-align: left;">{{ "Filename"|t }}</th>
+                    <th style="text-align: left;">{{ "Size"|t }}</th>
+                </tr>
+            </thead>
+            <tbody id="selected-files-body"></tbody>
+        </table>
+    </div>
+</div>
+{%- endif %}
 <br>
 <br>
 <script>
@@ -328,7 +345,7 @@
         submitButton.value = 'Uploading...';
 
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', '{{ args.public_path_as_str() }}/upload', true);
+        xhr.open('POST', '{{ args.public_path_as_str() }}/uploaded', true);
 
         xhr.upload.onprogress = function (event) {
             if (showProgress) {
@@ -360,6 +377,70 @@
     };
 
     // {% if !args.no_file_upload %}
+    const selectedFilesSection = document.getElementById('selected-files-section');
+    const selectedFilesBody = document.getElementById('selected-files-body');
+    const filePreview = document.getElementById('file-preview');
+    let previewObjectUrls = [];
+
+    function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 ** 2) return (bytes / 1024).toFixed(1).replace(/\.0$/, "") + " KB";
+        if (bytes < 1024 ** 3) return (bytes / 1024 ** 2).toFixed(1).replace(/\.0$/, "") + " MB";
+        return (bytes / 1024 ** 3).toFixed(1).replace(/\.0$/, "") + " GB";
+    }
+
+    function isImageFile(file) {
+        return file.type.startsWith("image/") ||
+            /\.(avif|bmp|gif|heif|ico|jpe?g|jfif|jxl|pjp|png|svg|tiff?|webp)$/i.test(file.name);
+    }
+
+    function updateAttachFileButton(files) {
+        if (!attachFileButton) return;
+        if (files.length > 1) {
+            attachFileButton.textContent = "{{ "Attached:"|t }} " + files.length + " {{ "files"|t }}";
+        } else if (files.length === 1) {
+            attachFileButton.textContent = "{{ "Attached:"|t }} " + files[0].name;
+        } else {
+            attachFileButton.textContent = "{{ "Select or drop file attachment"|t }}";
+        }
+    }
+
+    function renderSelectedFiles() {
+        const files = hiddenFileButton ? Array.from(hiddenFileButton.files) : [];
+        updateAttachFileButton(files);
+        if (!selectedFilesSection || !selectedFilesBody || !filePreview) return;
+
+        previewObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+        previewObjectUrls = [];
+        selectedFilesBody.replaceChildren();
+        filePreview.replaceChildren();
+        selectedFilesSection.style.display = files.length > 0 ? "" : "none";
+
+        for (const file of files) {
+            const row = document.createElement("tr");
+            const nameCell = document.createElement("td");
+            nameCell.textContent = file.name;
+            const sizeCell = document.createElement("td");
+            sizeCell.textContent = formatFileSize(file.size);
+            row.append(nameCell, sizeCell);
+            selectedFilesBody.appendChild(row);
+
+            if (isImageFile(file)) {
+                const objectUrl = URL.createObjectURL(file);
+                previewObjectUrls.push(objectUrl);
+                const figure = document.createElement("figure");
+                const image = document.createElement("img");
+                image.src = objectUrl;
+                image.alt = file.name;
+                const caption = document.createElement("figcaption");
+                caption.textContent = file.name;
+                caption.title = file.name;
+                figure.append(image, caption);
+                filePreview.appendChild(figure);
+            }
+        }
+    }
+
     function fileOversized() {
         if (hiddenFileButton.files.length > 0) {
             const fileSize = hiddenFileButton.files.item(0).size;
@@ -386,11 +467,7 @@
     }
 
     hiddenFileButton.addEventListener('change', function () {
-        if (this.files.length > 1) {
-            attachFileButton.textContent = "{{ "Attached:"|t }} " + this.files.length + " {{ "files"|t }}";
-        } else if (this.files.length === 1) {
-            attachFileButton.textContent = "{{ "Attached:"|t }} " + this.files[0].name;
-        }
+        renderSelectedFiles();
         fileOversized();
     });
 
@@ -409,11 +486,7 @@
              dataTransfer.items.add(evt.dataTransfer.files[i]);
         }
         hiddenFileButton.files = dataTransfer.files;
-        if (hiddenFileButton.files.length > 1) {
-             attachFileButton.textContent = "{{ "Attached:"|t }} " + hiddenFileButton.files.length + " {{ "files"|t }}";
-        } else {
-             attachFileButton.textContent = "{{ "Attached:"|t }} " + hiddenFileButton.files[0].name;
-        }
+        renderSelectedFiles();
         evt.preventDefault();
     };
 
@@ -484,15 +557,14 @@
         if (added === 0) return;
 
         hiddenFileButton.files = dataTransfer.files;
-
-        if (hiddenFileButton.files.length > 1) {
-            attachFileButton.textContent = "{{ "Attached:"|t }} " + hiddenFileButton.files.length + " {{ "files"|t }}";
-        } else if (hiddenFileButton.files.length === 1) {
-            attachFileButton.textContent = "{{ "Attached:"|t }} " + hiddenFileButton.files[0].name;
-        }
-
+        renderSelectedFiles();
         fileOversized();
     });
+
+    window.addEventListener('beforeunload', () => {
+        previewObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+    });
+    renderSelectedFiles();
     // {%- endif %}
 
 </script>
@@ -560,6 +632,47 @@
 
     #file {
         display: none;
+    }
+
+    #selected-files-section {
+        margin-top: 1.5rem;
+    }
+
+    .file-preview {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .file-preview figure {
+        margin: 0;
+        max-width: 220px;
+        padding: 0.5rem;
+        border-radius: 8px;
+        background-color: var(--background-body);
+    }
+
+    .file-preview img {
+        display: block;
+        max-width: 100%;
+        max-height: 180px;
+        margin: 0 auto;
+        border-radius: 4px;
+    }
+
+    .file-preview figcaption {
+        margin-top: 0.35rem;
+        overflow: hidden;
+        color: gray;
+        font-size: x-small;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #selected-files-body td {
+        padding: 8px;
+        border-bottom: 1px solid #ccc;
     }
 </style>
 

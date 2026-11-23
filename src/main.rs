@@ -187,7 +187,7 @@ async fn main() -> std::io::Result<()> {
                     .service(remove::remove)
                     .service(remove::post_remove)
                     .service(list::list)
-                    .service(web::resource("/upload").route(web::post().to(create::create)))
+                    .service(web::resource("/uploaded").route(web::post().to(create::create)))
                     .service(create::index_with_status)
             )
             .default_service(web::route().to(errors::not_found))

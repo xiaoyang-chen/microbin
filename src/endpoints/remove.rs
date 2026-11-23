@@ -147,7 +147,7 @@ pub async fn post_remove(
                 .append_header((
                     "Location",
                     format!(
-                        "{}/upload/{}",
+                        "{}/uploaded/{}",
                         ARGS.public_path_as_str(),
                         pastas[i].id_as_animals()
                     ),

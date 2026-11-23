@@ -33,13 +33,13 @@
                 <tr>
                     <td>
                         <a
-                            href="{{ args.public_path_as_str()}}/upload/{{pasta.id_as_animals()}}">{{pasta.id_as_animals()}}</a>
+                            href="{{ args.public_path_as_str()}}/uploaded/{{pasta.id_as_animals()}}">{{pasta.id_as_animals()}}</a>
                     </td>
                     <td>
                         {% if args.public_path_as_str() != "" %}
                         {% if args.short_path_as_str() == "" %}
                         <a style="margin-right:1rem; cursor: pointer;" class="copy-button" null
-                            data-url="{{ args.public_path_as_str()}}/upload/{{pasta.id_as_animals()}}">{{ "Copy"|t }}</a>
+                            data-url="{{ args.public_path_as_str()}}/uploaded/{{pasta.id_as_animals()}}">{{ "Copy"|t }}</a>
                         {% else %}
                         <a style="margin-right:1rem; cursor: pointer;" class="copy-button" data-url="{{ args.short_path_as_str()
                         }}/p/{{pasta.id_as_animals()}}">{{ "Copy"|t }}</a>
@@ -59,7 +59,7 @@
                         {%- endif %}
                         {% if pasta.attachments.is_some() %}
                         <a style="margin-right:1rem"
-                            href="{{ args.public_path_as_str() }}/upload/{{pasta.id_as_animals()}}">
+                            href="{{ args.public_path_as_str() }}/uploaded/{{pasta.id_as_animals()}}">
                             {{ 1 + pasta.attachments.as_ref().unwrap().len() }}{{ "Files"|t }}</a>
                         {% else if pasta.file.is_some() %}
                         <a style="margin-right:1rem"
@@ -110,7 +110,7 @@
                 <tr>
                     <td>
                         <a
-                            href="{{ args.public_path_as_str() }}/upload/{{pasta.id_as_animals()}}">{{pasta.id_as_animals()}}</a>
+                            href="{{ args.public_path_as_str() }}/uploaded/{{pasta.id_as_animals()}}">{{pasta.id_as_animals()}}</a>
                     </td>
                     <td>
                         {% if args.short_path_as_str() == "" %}

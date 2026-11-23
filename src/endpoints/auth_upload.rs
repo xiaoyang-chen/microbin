@@ -46,7 +46,7 @@ pub async fn auth_upload(data: web::Data<AppState>, id: web::Path<String>) -> Ht
                     id: id.into_inner(),
                     status: String::from(""),
                     permission: String::from("read"),
-                    path: String::from("upload"),
+                    path: String::from("uploaded"),
                     query: String::new(),
                 }
                 .render()
@@ -86,7 +86,7 @@ pub async fn auth_upload_with_status(
                     id,
                     status,
                     permission: String::from("read"),
-                    path: String::from("upload"),
+                    path: String::from("uploaded"),
                     query: String::new(),
                 }
                 .render()

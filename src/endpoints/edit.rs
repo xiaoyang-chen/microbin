@@ -348,7 +348,7 @@ pub async fn post_edit(
     }
 
     Ok(redirect_to(&format!(
-        "{}/upload/{}",
+        "{}/uploaded/{}",
         ARGS.public_path_as_str(),
         pastas[index].id_as_animals()
     )))

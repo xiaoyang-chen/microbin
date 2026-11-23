@@ -440,7 +440,7 @@ pub async fn create(
         Ok(HttpResponse::Found()
             .append_header((
                 "Location",
-                format!("{}/upload/{}", ARGS.public_path_as_str(), slug),
+                format!("{}/uploaded/{}", ARGS.public_path_as_str(), slug),
             ))
             .cookie(
                 Cookie::build("owner_token", encoded_token)

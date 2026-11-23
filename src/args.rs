@@ -78,7 +78,7 @@ pub struct Args {
     #[clap(short, long, env="MICROBIN_BIND", default_value_t = IpAddr::from([0, 0, 0, 0]))]
     pub bind: IpAddr,
 
-    /// Whether an upload may be set to `list=no` (hidden from the public listing). This is also enforced server-side: posting `list=no` to /upload while the flag is false is rejected with HTTP 400.
+    /// Whether an upload may be set to `list=no` (hidden from the public listing). This is also enforced server-side: posting `list=no` to /uploaded while the flag is false is rejected with HTTP 400.
     #[clap(long, env = "MICROBIN_ENABLE_UNLISTED", action = clap::ArgAction::Set, default_value_t = true)]
     pub enable_unlisted: bool,
 
@@ -150,11 +150,11 @@ pub struct Args {
     #[clap(long, env = "MICROBIN_ETERNAL_PASTA")]
     pub eternal_pasta: bool,
 
-    /// Whether the `write` permission may be set to `password`. This is also enforced server-side: posting `write=password` to /upload while the flag is false is rejected with HTTP 400.
+    /// Whether the `write` permission may be set to `password`. This is also enforced server-side: posting `write=password` to /uploaded while the flag is false is rejected with HTTP 400.
     #[clap(long, env = "MICROBIN_ENABLE_WRITE_PASSWORD", action = clap::ArgAction::Set, default_value_t = true)]
     pub enable_write_password: bool,
 
-    /// Whether the `read` permission may be set to `password`. This is also enforced server-side: posting `read=password` to /upload while the flag is false is rejected with HTTP 400.
+    /// Whether the `read` permission may be set to `password`. This is also enforced server-side: posting `read=password` to /uploaded while the flag is false is rejected with HTTP 400.
     #[clap(long, env = "MICROBIN_ENABLE_READ_PASSWORD", action = clap::ArgAction::Set, default_value_t = true)]
     pub enable_read_password: bool,
 

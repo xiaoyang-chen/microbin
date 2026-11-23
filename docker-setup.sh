@@ -84,7 +84,7 @@ set_env() {
 set_env MICROBIN_PORT "$port" .env
 
 if [ -n "$public_path" ]; then
-    # 去掉末尾斜杠：程序内部会自己拼路径，多余的斜杠会拼出 //upload
+    # 去掉末尾斜杠：程序内部会自己拼路径，多余的斜杠会拼出 //uploaded
     public_path=${public_path%/}
     set_env MICROBIN_PUBLIC_PATH "$public_path" .env
 fi

@@ -130,7 +130,7 @@ fn pastaresponse(
         .body(ErrorTemplate { args: &ARGS }.render().unwrap())
 }
 
-#[post("/upload/{id}")]
+#[post("/uploaded/{id}")]
 pub async fn postpasta(
     data: web::Data<AppState>,
     id: web::Path<String>,
@@ -150,7 +150,7 @@ pub async fn postshortpasta(
     Ok(pastaresponse(data, id, password, false))
 }
 
-#[get("/upload/{id}")]
+#[get("/uploaded/{id}")]
 pub async fn getpasta(
     data: web::Data<AppState>,
     id: web::Path<String>,

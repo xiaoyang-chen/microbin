@@ -63,7 +63,7 @@ The old fixed set of five privacy levels (`public` / `unlisted` / `readonly` / `
 
 | Permission | Values | Meaning | Applies to |
 | --- | --- | --- | --- |
-| `read` | `allow` / `password` | Who can see the content. With `password`, the text and all attachments are stored encrypted with that password on the server | `/upload/{id}`, `/raw/{id}`, `/file/{id}`, `/archive/{id}`, the URL short link `/url/{id}` and `/u/{id}`, the edit page |
+| `read` | `allow` / `password` | Who can see the content. With `password`, the text and all attachments are stored encrypted with that password on the server | `/uploaded/{id}`, `/raw/{id}`, `/file/{id}`, `/archive/{id}`, the URL short link `/url/{id}` and `/u/{id}`, the edit page |
 | `write` | `allow` / `password` / `refuse` | Who can modify or delete. `password` is an authorization check only and does **not** encrypt anything; `refuse` rejects everyone (the admin password can still delete) | saving edits, `/remove/{id}`, the "edit / delete" buttons |
 | `list` | `yes` / `no` | Whether it appears on the public `/list` page | `/list` only |
 
@@ -85,7 +85,7 @@ CLI flags changed accordingly:
 - Added: `--default-permissions=read=allow,write=allow,list=yes` (comma-separated `key=value`)
 - Activated: `--default-view=gallery|list|stream` (the flag existed upstream, but the template hardcoded the value, so it never had any effect — see "Other upstream bugs fixed along the way" below)
 
-> The three `--enable-*` flags are **both a form switch and a server-side policy**. Turning one off removes the option from the new-upload form, and posting that disabled value straight to `/upload` is rejected with **HTTP 400** plus a readable message. All three default to `true`, in which case these guards never fire and behaviour is exactly as before.
+> The three `--enable-*` flags are **both a form switch and a server-side policy**. Turning one off removes the option from the new-upload form, and posting that disabled value straight to `/uploaded` is rejected with **HTTP 400** plus a readable message. All three default to `true`, in which case these guards never fire and behaviour is exactly as before.
 >
 > Why reject rather than do what upstream did — **silently downgrade**? A downgrade turns all three cases into a result that is **more open than the user asked for**: posting `read=password` and getting `allow` means the user believes the content is encrypted when it is stored in plaintext; posting `write=password` and getting `allow` means the user believes nobody else can modify it when anybody can; posting `list=no` and getting `list=yes` means the user believes the upload is not publicly listed when it is on `/list`. The severity differs, but the direction is the same: the protection the user asked for did not take effect. Upstream's `--enable-readonly` was exactly this pattern (posting `readonly` after disabling it produced a publicly writable upload). Rejection collapses all three into one outcome — no upload is created, the client gets a 400 and a readable message, and there is no state in which the user thinks something is protected when it is not.
 >
