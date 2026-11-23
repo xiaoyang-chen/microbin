@@ -440,19 +440,43 @@
             dataTransfer.items.add(file);
         }
 
-        // Add pasted files, skipping duplicates (same size + type already attached)
+        // Add pasted files, skipping duplicates; rename generic clipboard names
         let added = 0;
         for (const newFile of pastedFiles) {
             // Check if this exact file (size + name + type) is already there
-            const isDuplicate = existingFiles.some(oldFile => 
-                oldFile.size === newFile.size && 
-                oldFile.name === newFile.name && 
+            const isDuplicate = existingFiles.some(oldFile =>
+                oldFile.size === newFile.size &&
+                oldFile.name === newFile.name &&
                 oldFile.type === newFile.type
             );
 
             if (!isDuplicate) {
-                // We keep the original 'newFile' object to preserve the filename
-                dataTransfer.items.add(newFile);
+                let fileToAdd = newFile;
+
+                // Browsers often name clipboard images "image.png" / "image.jpg"
+                const generic =
+                    !newFile.name ||
+                    /^image\.(png|jpe?g|gif|webp|bmp)$/i.test(newFile.name);
+
+                if (generic) {
+                    const ext = (newFile.name && newFile.name.includes('.'))
+                        ? newFile.name.slice(newFile.name.lastIndexOf('.'))
+                        : (newFile.type && newFile.type.includes('/'))
+                            ? '.' + newFile.type.split('/')[1].replace('jpeg', 'jpg')
+                            : '.png';
+                    const unique =
+                        'image-' +
+                        Date.now().toString(36) +
+                        '-' +
+                        Math.random().toString(36).slice(2, 8) +
+                        ext;
+                    fileToAdd = new File([newFile], unique, {
+                        type: newFile.type,
+                        lastModified: newFile.lastModified,
+                    });
+                }
+
+                dataTransfer.items.add(fileToAdd);
                 added++;
             }
         }
