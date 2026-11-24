@@ -276,6 +276,7 @@
                 <tr>
                     <th style="text-align: left;">{{ "Filename"|t }}</th>
                     <th style="text-align: left;">{{ "Size"|t }}</th>
+                    <th style="text-align: right;">{{ "Action"|t }}</th>
                 </tr>
             </thead>
             <tbody id="selected-files-body"></tbody>
@@ -405,6 +406,30 @@
         }
     }
 
+    function removeSelectedFile(index) {
+        if (!hiddenFileButton) return;
+
+        const remainingFiles = Array.from(hiddenFileButton.files)
+            .filter((_, fileIndex) => fileIndex !== index);
+        const dataTransfer = new DataTransfer();
+        remainingFiles.forEach((file) => dataTransfer.items.add(file));
+        hiddenFileButton.files = dataTransfer.files;
+        renderSelectedFiles();
+    }
+
+    function createRemoveSelectedFileButton(index, inline) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = inline
+            ? "remove-selected-file remove-selected-file-inline"
+            : "remove-selected-file";
+        button.textContent = "x";
+        button.title = "{{ "Remove"|t }}";
+        button.setAttribute("aria-label", "{{ "Remove"|t }}");
+        button.addEventListener("click", () => removeSelectedFile(index));
+        return button;
+    }
+
     function renderSelectedFiles() {
         const files = hiddenFileButton ? Array.from(hiddenFileButton.files) : [];
         updateAttachFileButton(files);
@@ -416,13 +441,16 @@
         filePreview.replaceChildren();
         selectedFilesSection.style.display = files.length > 0 ? "" : "none";
 
-        for (const file of files) {
+        for (const [index, file] of files.entries()) {
             const row = document.createElement("tr");
             const nameCell = document.createElement("td");
             nameCell.textContent = file.name;
             const sizeCell = document.createElement("td");
             sizeCell.textContent = formatFileSize(file.size);
-            row.append(nameCell, sizeCell);
+            const actionCell = document.createElement("td");
+            actionCell.style.textAlign = "right";
+            actionCell.appendChild(createRemoveSelectedFileButton(index, true));
+            row.append(nameCell, sizeCell, actionCell);
             selectedFilesBody.appendChild(row);
 
             if (isImageFile(file)) {
@@ -435,7 +463,7 @@
                 const caption = document.createElement("figcaption");
                 caption.textContent = file.name;
                 caption.title = file.name;
-                figure.append(image, caption);
+                figure.append(image, createRemoveSelectedFileButton(index, false), caption);
                 filePreview.appendChild(figure);
             }
         }
@@ -646,6 +674,7 @@
     }
 
     .file-preview figure {
+        position: relative;
         margin: 0;
         max-width: 220px;
         padding: 0.5rem;
@@ -668,6 +697,42 @@
         font-size: x-small;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    .remove-selected-file {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.5rem;
+        height: 1.5rem;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        background-color: rgba(0, 0, 0, 0.6);
+        color: white;
+        cursor: pointer;
+        font-size: 0.9rem;
+        line-height: 1;
+    }
+
+    .file-preview .remove-selected-file {
+        position: absolute;
+        top: 0.25rem;
+        right: 0.25rem;
+    }
+
+    .remove-selected-file-inline {
+        width: auto;
+        height: auto;
+        padding: 0 0.35rem;
+        border-radius: 4px;
+        background-color: transparent;
+        color: gray;
+        font-size: 1rem;
+    }
+
+    .remove-selected-file-inline:hover {
+        color: #c00;
     }
 
     #selected-files-body td {
