@@ -169,6 +169,7 @@ pasta.file_embeddable() && !pasta.attachments.is_some() %}
   const copyTextBtn = document.getElementById("copy-text-button")
   const copyRedirectBtn = document.getElementById("copy-redirect-button")
   const shareLink = document.getElementById("share-link")
+  const SAVED_LINK_COPY_KEY = "microbin_saved_link_copied"
   var content = `{{ pasta.content_escaped() }}`
   const contentElement = document.getElementById("code");
   const url = (`{{ args.short_path_as_str()}}` === "") ? `{{ args.public_path_as_str() }}/uploaded/{{pasta.id_as_animals()}}` : `{{ args.short_path_as_str()}}/p/{{pasta.id_as_animals()}}`
@@ -280,11 +281,19 @@ pasta.file_embeddable() && !pasta.attachments.is_some() %}
     const params = new URLSearchParams(window.location.search);
     if (params.get("saved") !== "1") return;
 
+    const copiedURL = sessionStorage.getItem(SAVED_LINK_COPY_KEY);
+    sessionStorage.removeItem(SAVED_LINK_COPY_KEY);
+
     const cleanURL = new URL(window.location.href);
     cleanURL.searchParams.delete("saved");
     window.history.replaceState({}, "", cleanURL.toString());
 
     const absoluteURL = new URL(url, window.location.href).href;
+    if (copiedURL === absoluteURL) {
+      showSaveNotice("{{ "Saved successfully. Link copied to clipboard."|t }}");
+      return;
+    }
+
     writeLinkToClipboard(absoluteURL)
       .then(() => {
         showSaveNotice("{{ "Saved successfully. Link copied to clipboard."|t }}");
@@ -342,7 +351,11 @@ pasta.file_embeddable() && !pasta.attachments.is_some() %}
     })
   }
 
-  copyLinkAfterSave();
+  if (document.readyState === "complete") {
+    copyLinkAfterSave();
+  } else {
+    window.addEventListener("load", copyLinkAfterSave, { once: true });
+  }
 
 
 // {% if pasta.attachments.is_some() %}

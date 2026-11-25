@@ -214,6 +214,70 @@
 
 <script>
     const editForm = document.getElementById('edit-form');
+    const editSaveButton = document.getElementById('submit-button');
+    const SAVED_LINK_COPY_KEY = "microbin_saved_link_copied";
+    const editShareURL = new URL(
+        `{% if args.short_path_as_str() != "" %}{{ args.short_path_as_str() }}/p/{{ pasta.id_as_animals() }}{% else %}{{ args.public_path_as_str() }}/uploaded/{{ pasta.id_as_animals() }}{% endif %}`,
+        window.location.href
+    ).href;
+    let editSubmitting = false;
+
+    function fallbackCopySavedLink(text) {
+        return new Promise((resolve, reject) => {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            textArea.style.top = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            let copied = false;
+            try {
+                copied = document.execCommand("copy");
+            } catch (error) {
+                console.error("Fallback: unable to copy saved link", error);
+            }
+            document.body.removeChild(textArea);
+
+            if (copied) {
+                resolve();
+            } else {
+                reject(new Error("Clipboard copy was unsuccessful"));
+            }
+        });
+    }
+
+    function writeSavedLinkToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text)
+                .catch(() => fallbackCopySavedLink(text));
+        }
+        return fallbackCopySavedLink(text);
+    }
+
+    let editClipboardWrite = null;
+
+    function copyEditLinkBeforeSave() {
+        if (editClipboardWrite) return editClipboardWrite;
+        sessionStorage.removeItem(SAVED_LINK_COPY_KEY);
+        editClipboardWrite = writeSavedLinkToClipboard(editShareURL)
+            .then(() => {
+                sessionStorage.setItem(SAVED_LINK_COPY_KEY, editShareURL);
+            })
+            .catch((error) => {
+                console.error("Failed to copy saved link:", error);
+            });
+        return editClipboardWrite;
+    }
+
+    if (editSaveButton) {
+        editSaveButton.addEventListener('click', () => {
+            if (typeof fileOversized === "function" && fileOversized()) return;
+            copyEditLinkBeforeSave();
+        });
+    }
 
     document.querySelectorAll('.remove-existing-file').forEach((button) => {
         button.addEventListener('click', () => {
@@ -417,17 +481,36 @@
         fileOversized();
     });
 
-    editForm.onsubmit = function (event) {
-        if (fileOversized()) {
-            event.preventDefault();
-        }
-    };
-
     window.addEventListener('beforeunload', () => {
         previewObjectUrls.forEach((url) => URL.revokeObjectURL(url));
     });
     renderSelectedFiles();
     // {%- endif %}
+
+    editForm.onsubmit = function (event) {
+        if (typeof fileOversized === "function" && fileOversized()) {
+            event.preventDefault();
+            return;
+        }
+        if (editSubmitting) {
+            event.preventDefault();
+            return;
+        }
+
+        event.preventDefault();
+        editSubmitting = true;
+
+        const clipboardWrite = copyEditLinkBeforeSave();
+
+        if (editSaveButton) {
+            editSaveButton.disabled = true;
+            editSaveButton.value = "Saving...";
+        }
+
+        clipboardWrite.finally(() => {
+            HTMLFormElement.prototype.submit.call(editForm);
+        });
+    };
 </script>
 
 <style>

@@ -298,6 +298,81 @@
     const attachFileButton = document.getElementById('attach-file-button');
     const dropContainer = document.getElementById('pasta-form');
     const hiddenFileButton = document.getElementById('file');
+    const SAVED_LINK_COPY_KEY = "microbin_saved_link_copied";
+    const shareLinkBase = (`{{ args.short_path_as_str() }}` === "")
+        ? `{{ args.public_path_as_str() }}/uploaded/`
+        : `{{ args.short_path_as_str() }}/p/`;
+
+    function fallbackCopySavedLink(text) {
+        return new Promise((resolve, reject) => {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            textArea.style.top = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            let copied = false;
+            try {
+                copied = document.execCommand("copy");
+            } catch (error) {
+                console.error("Fallback: unable to copy saved link", error);
+            }
+            document.body.removeChild(textArea);
+
+            if (copied) {
+                resolve();
+            } else {
+                reject(new Error("Clipboard copy was unsuccessful"));
+            }
+        });
+    }
+
+    function writeSavedLinkToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text)
+                .catch(() => fallbackCopySavedLink(text));
+        }
+        return fallbackCopySavedLink(text);
+    }
+
+    // 浏览器只在用户手势内允许写剪贴板。上传完成后再复制会丢失手势授权，
+    // 因此在这里先用等待解析的 Promise 发起写入，等拿到上传后的真实链接再完成。
+    function writeSavedLinkWhenReady(linkPromise) {
+        if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
+            try {
+                const blobPromise = linkPromise.then(
+                    (text) => new Blob([text], { type: "text/plain" })
+                );
+                return navigator.clipboard.write([
+                    new ClipboardItem({ "text/plain": blobPromise })
+                ]).catch((error) => {
+                    console.error("Deferred clipboard write failed:", error);
+                    return linkPromise.then((text) => writeSavedLinkToClipboard(text));
+                });
+            } catch (error) {
+                console.error("Deferred clipboard copy unavailable:", error);
+            }
+        }
+        return linkPromise.then((text) => writeSavedLinkToClipboard(text));
+    }
+
+    function extractUploadSlug(url) {
+        const segments = url.pathname.split("/").filter(Boolean);
+        for (const route of ["uploaded", "auth"]) {
+            const index = segments.lastIndexOf(route);
+            if (index !== -1 && segments[index + 1]) {
+                return segments[index + 1];
+            }
+        }
+        return null;
+    }
+
+    function buildShareURL(slug) {
+        return new URL(shareLinkBase + encodeURIComponent(slug), window.location.href).href;
+    }
 
     {# 只有把权限选成「需要密码」时，才显示对应的密码输入框 #}
     function syncPasswordRows() {
@@ -340,6 +415,17 @@
             return false;
         }
 
+        sessionStorage.removeItem(SAVED_LINK_COPY_KEY);
+
+        let resolveSavedLink;
+        let rejectSavedLink;
+        const savedLinkPromise = new Promise((resolve, reject) => {
+            resolveSavedLink = resolve;
+            rejectSavedLink = reject;
+        });
+        const clipboardWrite = writeSavedLinkWhenReady(savedLinkPromise);
+        clipboardWrite.catch(() => {});
+
         let showProgress = false;
 
         submitButton.disabled = true;
@@ -361,11 +447,39 @@
 
         xhr.onload = function () { // Use onload instead of onreadystatechange for cleaner status check
              if (xhr.status === 200 || xhr.status === 302) {
-                window.location.href = xhr.responseURL;
+                const finalURL = new URL(xhr.responseURL, window.location.href);
+                const slug = extractUploadSlug(finalURL);
+                const navigate = () => {
+                    window.location.href = finalURL.href;
+                };
+
+                if (!slug) {
+                    resolveSavedLink(finalURL.href);
+                    clipboardWrite.catch(() => {}).finally(navigate);
+                    return;
+                }
+
+                const shareURL = buildShareURL(slug);
+                resolveSavedLink(shareURL);
+                clipboardWrite
+                    .then(() => {
+                        sessionStorage.setItem(SAVED_LINK_COPY_KEY, shareURL);
+                    })
+                    .catch((error) => {
+                        console.error("Failed to copy saved link:", error);
+                    })
+                    .finally(navigate);
             } else {
+                rejectSavedLink(new Error("Upload failed"));
                 submitButton.value = 'Failed';
                 submitButton.disabled = false;
             }
+        };
+
+        xhr.onerror = function () {
+            rejectSavedLink(new Error("Upload failed"));
+            submitButton.value = 'Failed';
+            submitButton.disabled = false;
         };
 
 
