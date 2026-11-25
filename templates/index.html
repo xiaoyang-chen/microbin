@@ -188,8 +188,8 @@
         <input type="hidden" name="syntax_highlight" value="none">
         {%- endif %}
 
-        {# ---- 三项相互独立的权限 ---- #}
-        <div>
+        {# ---- 三项相互独立的权限（前端隐藏） ---- #}
+        <div style="display: none;">
             <label for="read_access">{{ "Read permission"|t }}<sup> <a href="{{ args.public_path_as_str() }}/guide#read">?</a></sup></label><br>
             <select style="width: 100%;" name="read_access" id="read_access">
                 <option value="allow"{% if default_permissions.read.as_str() == "allow" %} selected{% endif %}>{{ "Anyone (no password)"|t }}</option>
@@ -205,7 +205,7 @@
             {%- endif %}
         </div>
 
-        <div>
+        <div style="display: none;">
             <label for="write_access">{{ "Write permission"|t }}<sup> <a href="{{ args.public_path_as_str() }}/guide#write">?</a></sup></label><br>
             <select style="width: 100%;" name="write_access" id="write_access">
                 <option value="allow"{% if default_permissions.write.as_str() == "allow" %} selected{% endif %}>{{ "Anyone (no password)"|t }}</option>
@@ -222,7 +222,7 @@
             {%- endif %}
         </div>
 
-        <div>
+        <div style="display: none;">
             <label for="listed">{{ "List permission"|t }}<sup> <a href="{{ args.public_path_as_str() }}/guide#list">?</a></sup></label><br>
             <select style="width: 100%;" name="listed" id="listed">
                 <option value="yes"{% if default_permissions.listed %} selected{% endif %}>{{ "Listed publicly"|t }}</option>
@@ -382,6 +382,7 @@
     const selectedFilesBody = document.getElementById('selected-files-body');
     const filePreview = document.getElementById('file-preview');
     let previewObjectUrls = [];
+    let selectedFiles = [];
 
     function formatFileSize(bytes) {
         if (bytes < 1024) return bytes + " B";
@@ -393,6 +394,13 @@
     function isImageFile(file) {
         return file.type.startsWith("image/") ||
             /\.(avif|bmp|gif|heif|ico|jpe?g|jfif|jxl|pjp|png|svg|tiff?|webp)$/i.test(file.name);
+    }
+
+    function isSameFile(first, second) {
+        return first.name === second.name &&
+            first.size === second.size &&
+            first.type === second.type &&
+            first.lastModified === second.lastModified;
     }
 
     function updateAttachFileButton(files) {
@@ -409,12 +417,7 @@
     function removeSelectedFile(index) {
         if (!hiddenFileButton) return;
 
-        const remainingFiles = Array.from(hiddenFileButton.files)
-            .filter((_, fileIndex) => fileIndex !== index);
-        const dataTransfer = new DataTransfer();
-        remainingFiles.forEach((file) => dataTransfer.items.add(file));
-        hiddenFileButton.files = dataTransfer.files;
-        renderSelectedFiles();
+        setSelectedFiles(selectedFiles.filter((_, fileIndex) => fileIndex !== index));
     }
 
     function createRemoveSelectedFileButton(index, inline) {
@@ -431,7 +434,7 @@
     }
 
     function renderSelectedFiles() {
-        const files = hiddenFileButton ? Array.from(hiddenFileButton.files) : [];
+        const files = selectedFiles.slice();
         updateAttachFileButton(files);
         if (!selectedFilesSection || !selectedFilesBody || !filePreview) return;
 
@@ -469,53 +472,52 @@
         }
     }
 
-    function fileOversized() {
-        if (hiddenFileButton.files.length > 0) {
-            const fileSize = hiddenFileButton.files.item(0).size;
-            const fileSizeMb = fileSize / 1024 ** 2;
+    function setSelectedFiles(files) {
+        selectedFiles = files.slice();
+        if (hiddenFileButton) {
+            const dataTransfer = new DataTransfer();
+            selectedFiles.forEach((file) => dataTransfer.items.add(file));
+            hiddenFileButton.files = dataTransfer.files;
+        }
+        renderSelectedFiles();
+    }
 
+    function fileOversized() {
+        if (selectedFiles.length > 0) {
             {# read 权限要密码时，正文与附件都要加密，限额更严 #}
-            if (readAccessDropdown?.value === "password") {
-                if (fileSizeMb >
-                    parseInt("{{ args.max_file_size_encrypted_mb }}")) {
-                    attachFileButton.textContent = "{{ "Please select a file smaller than"|t }} {{ args.max_file_size_encrypted_mb }} MB";
-                    this.value = "";
-                    return true;
-                }
-            } else {
-                if (fileSizeMb >
-                    parseInt("{{ args.max_file_size_unencrypted_mb }}")) {
-                    attachFileButton.textContent = "{{ "Please select a file smaller than"|t }} {{ args.max_file_size_unencrypted_mb }} MB";
-                    this.value = "";
-                    return true;
-                }
+            const maxFileSizeMb = readAccessDropdown?.value === "password"
+                ? parseInt("{{ args.max_file_size_encrypted_mb }}")
+                : parseInt("{{ args.max_file_size_unencrypted_mb }}");
+            const hasOversizedFile = selectedFiles.some(
+                (file) => file.size / 1024 ** 2 > maxFileSizeMb
+            );
+
+            if (hasOversizedFile) {
+                attachFileButton.textContent = "{{ "Please select a file smaller than"|t }} " + maxFileSizeMb + " MB";
+                return true;
             }
         }
         return false;
     }
 
     hiddenFileButton.addEventListener('change', function () {
-        renderSelectedFiles();
+        const newFiles = Array.from(this.files)
+            .filter((newFile) => !selectedFiles.some((existingFile) => isSameFile(existingFile, newFile)));
+        setSelectedFiles(selectedFiles.concat(newFiles));
         fileOversized();
     });
 
     dropContainer.ondragover = dropContainer.ondragenter = function (evt) {
         evt.preventDefault();
-        if (hiddenFileButton.files.length == 0) {
-            attachFileButton.textContent = "{{ "Drop your file here"|t }}";
-        } else {
-            attachFileButton.textContent = "{{ "Drop your file here to replace"|t }} " + hiddenFileButton.files[0].name;
-        }
+        attachFileButton.textContent = "{{ "Drop your file here"|t }}";
     };
 
     dropContainer.ondrop = function (evt) {
-        const dataTransfer = new DataTransfer();
-        for (let i = 0; i < evt.dataTransfer.files.length; i++) {
-             dataTransfer.items.add(evt.dataTransfer.files[i]);
-        }
-        hiddenFileButton.files = dataTransfer.files;
-        renderSelectedFiles();
         evt.preventDefault();
+        const newFiles = Array.from(evt.dataTransfer.files)
+            .filter((newFile) => !selectedFiles.some((existingFile) => isSameFile(existingFile, newFile)));
+        setSelectedFiles(selectedFiles.concat(newFiles));
+        fileOversized();
     };
 
     document.addEventListener('paste', function (evt) {
@@ -534,18 +536,13 @@
 
         evt.preventDefault();
 
-        const dataTransfer = new DataTransfer();
-
-        const existingFiles = Array.from(hiddenFileButton.files);
-        for (const file of existingFiles) {
-            dataTransfer.items.add(file);
-        }
+        const mergedFiles = selectedFiles.slice();
 
         // Add pasted files, skipping duplicates; rename generic clipboard names
         let added = 0;
         for (const newFile of pastedFiles) {
             // Check if this exact file (size + name + type) is already there
-            const isDuplicate = existingFiles.some(oldFile =>
+            const isDuplicate = mergedFiles.some(oldFile =>
                 oldFile.size === newFile.size &&
                 oldFile.name === newFile.name &&
                 oldFile.type === newFile.type
@@ -577,15 +574,14 @@
                     });
                 }
 
-                dataTransfer.items.add(fileToAdd);
+                mergedFiles.push(fileToAdd);
                 added++;
             }
         }
 
         if (added === 0) return;
 
-        hiddenFileButton.files = dataTransfer.files;
-        renderSelectedFiles();
+        setSelectedFiles(mergedFiles);
         fileOversized();
     });
 
