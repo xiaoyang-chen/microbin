@@ -424,7 +424,7 @@ pub async fn create(
     // read 权限要求密码时，直接引导用户去密码页；否则直接进详情页。
     if read_protected {
         Ok(HttpResponse::Found()
-            .append_header(("Location", format!("{}/auth/{}/success", ARGS.public_path_as_str(), slug)))
+            .append_header(("Location", format!("{}/auth/{}/success?saved=1", ARGS.public_path_as_str(), slug)))
             .finish())
     } else {
         // Generate time-limited token for initial view using Hashids
@@ -440,7 +440,7 @@ pub async fn create(
         Ok(HttpResponse::Found()
             .append_header((
                 "Location",
-                format!("{}/uploaded/{}", ARGS.public_path_as_str(), slug),
+                format!("{}/uploaded/{}?saved=1", ARGS.public_path_as_str(), slug),
             ))
             .cookie(
                 Cookie::build("owner_token", encoded_token)

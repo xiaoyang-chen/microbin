@@ -27,6 +27,7 @@ fn pastaresponse(
     id: web::Path<String>,
     password: String,
     skip_increment: bool,
+    saved: bool,
 ) -> HttpResponse {
     // get access to the pasta collection
     let mut pastas = data.pastas.lock().unwrap();
@@ -55,10 +56,11 @@ fn pastaresponse(
         // ---- read 权限 ----
         // 要求密码却没提供 → 引导到密码页
         if pastas[index].read_requires_password() && password.is_empty() {
+            let saved_query = if saved { "?saved=1" } else { "" };
             return HttpResponse::Found()
                 .append_header((
                     "Location",
-                    format!("{}/auth/{}", ARGS.public_path_as_str(), pastas[index].id_as_animals()),
+                    format!("{}/auth/{}{}", ARGS.public_path_as_str(), pastas[index].id_as_animals(), saved_query),
                 ))
                 .finish();
         }
@@ -67,10 +69,16 @@ fn pastaresponse(
         if pastas[index].read_requires_password()
             && !auth::verify_read_password(&pastas[index], &password)
         {
+            let saved_query = if saved { "?saved=1" } else { "" };
             return HttpResponse::Found()
                 .append_header((
                     "Location",
-                    format!("{}/auth/{}/incorrect", ARGS.public_path_as_str(), pastas[index].id_as_animals()),
+                    format!(
+                        "{}/auth/{}/incorrect{}",
+                        ARGS.public_path_as_str(),
+                        pastas[index].id_as_animals(),
+                        saved_query
+                    ),
                 ))
                 .finish();
         }
@@ -134,10 +142,15 @@ fn pastaresponse(
 pub async fn postpasta(
     data: web::Data<AppState>,
     id: web::Path<String>,
+    request: HttpRequest,
     payload: Multipart,
 ) -> Result<HttpResponse, Error> {
     let password = auth::password_from_multipart(payload).await?;
-    Ok(pastaresponse(data, id, password, false))
+    let saved = request
+        .query_string()
+        .split('&')
+        .any(|pair| pair == "saved=1");
+    Ok(pastaresponse(data, id, password, false, saved))
 }
 
 #[post("/p/{id}")]
@@ -147,7 +160,7 @@ pub async fn postshortpasta(
     payload: Multipart,
 ) -> Result<HttpResponse, Error> {
     let password = auth::password_from_multipart(payload).await?;
-    Ok(pastaresponse(data, id, password, false))
+    Ok(pastaresponse(data, id, password, false, false))
 }
 
 #[get("/uploaded/{id}")]
@@ -168,7 +181,7 @@ pub async fn getpasta(
         }
     }
 
-    pastaresponse(data, id, String::from(""), skip_increment)
+    pastaresponse(data, id, String::from(""), skip_increment, false)
 }
 
 // when creating a pasta, the owner is issued a token with a 15-second expiration
@@ -199,7 +212,7 @@ fn verify_owner_token(token: &str, id: &str) -> bool {
 
 #[get("/p/{id}")]
 pub async fn getshortpasta(data: web::Data<AppState>, id: web::Path<String>) -> HttpResponse {
-    pastaresponse(data, id, String::from(""), false)
+    pastaresponse(data, id, String::from(""), false, false)
 }
 
 fn urlresponse(data: web::Data<AppState>, id: web::Path<String>) -> HttpResponse {

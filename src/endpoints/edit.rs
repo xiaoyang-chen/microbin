@@ -625,7 +625,7 @@ pub async fn post_submit_edit_private(
     }
 
     Ok(redirect_to(&format!(
-        "{}/auth/{}/success",
+        "{}/auth/{}/success?saved=1",
         ARGS.public_path_as_str(),
         pastas[index].id_as_animals()
     )))
@@ -663,7 +663,7 @@ pub async fn post_edit(
     }
 
     Ok(redirect_to(&format!(
-        "{}/uploaded/{}",
+        "{}/uploaded/{}?saved=1",
         ARGS.public_path_as_str(),
         pastas[index].id_as_animals()
     )))

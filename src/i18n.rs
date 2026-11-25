@@ -413,6 +413,8 @@ static ZH: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
         // ---- 上传结果页 ----
         "Raw Text Content" => "原始文本内容",
         "Download all as ZIP" => "全部下载为 ZIP",
+        "Saved successfully. Link copied to clipboard." => "保存成功,链接已复制到剪贴板",
+        "Saved successfully, but failed to copy the link. Please copy it manually." => "保存成功，但复制链接失败，请手动复制。",
 
         // ---- 列表页 ----
         "No uploads yet. 😔 Create one" => "还没有任何上传内容。😔 创建一个",

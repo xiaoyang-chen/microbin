@@ -231,6 +231,68 @@ pasta.file_embeddable() && !pasta.attachments.is_some() %}
     }, 1000);
   }
 
+  function fallbackCopyLink(text) {
+    return new Promise((resolve, reject) => {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-9999px";
+      textArea.style.top = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+
+      let copied = false;
+      try {
+        copied = document.execCommand("copy");
+      } catch (error) {
+        console.error("Fallback: unable to copy link", error);
+      }
+      document.body.removeChild(textArea);
+
+      if (copied) {
+        resolve();
+      } else {
+        reject(new Error("Clipboard copy was unsuccessful"));
+      }
+    });
+  }
+
+  function writeLinkToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text)
+        .catch(() => fallbackCopyLink(text));
+    }
+    return fallbackCopyLink(text);
+  }
+
+  function showSaveNotice(message) {
+    const notice = document.createElement("div");
+    notice.className = "save-success-notice";
+    notice.textContent = message;
+    document.body.appendChild(notice);
+    setTimeout(() => notice.remove(), 4000);
+  }
+
+  function copyLinkAfterSave() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("saved") !== "1") return;
+
+    const cleanURL = new URL(window.location.href);
+    cleanURL.searchParams.delete("saved");
+    window.history.replaceState({}, "", cleanURL.toString());
+
+    const absoluteURL = new URL(url, window.location.href).href;
+    writeLinkToClipboard(absoluteURL)
+      .then(() => {
+        showSaveNotice("{{ "Saved successfully. Link copied to clipboard."|t }}");
+      })
+      .catch((error) => {
+        console.error("Failed to copy saved link:", error);
+        showSaveNotice("{{ "Saved successfully, but failed to copy the link. Please copy it manually."|t }}");
+      });
+  }
+
   function escapeHtml(unsafe) {
     return unsafe
       .replace(/&/g, "&amp;")
@@ -269,6 +331,8 @@ pasta.file_embeddable() && !pasta.attachments.is_some() %}
       copyToClipboard(decodeContent, copyTextBtn, "Copy Text");
     })
   }
+
+  copyLinkAfterSave();
 
 
 // {% if pasta.attachments.is_some() %}
@@ -381,6 +445,19 @@ pasta.file_embeddable() && !pasta.attachments.is_some() %}
     padding-left: 0.8rem;
     padding-right: 0.8rem;
     cursor: pointer;
+  }
+
+  .save-success-notice {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    z-index: 1000;
+    padding: 0.75rem 1.25rem;
+    border-radius: 6px;
+    background-color: #2e7d32;
+    color: white;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    transform: translateX(-50%);
   }
 
   .gallery-grid {

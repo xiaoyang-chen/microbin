@@ -4,7 +4,7 @@ use crate::util::animalnumbers::to_u64;
 use crate::util::hashids::to_u64 as hashid_to_u64;
 use crate::util::misc::remove_expired;
 use crate::AppState;
-use actix_web::{get, web, HttpResponse};
+use actix_web::{get, web, HttpRequest, HttpResponse};
 use askama::Template;
 use crate::i18n::filters;
 
@@ -21,12 +21,29 @@ struct AuthPasta<'a> {
     ///
     /// 密码提交后仍要落到原来的目标上，因此需要把它原样带过去：
     /// * `/secure_file/{id}?fname=...` —— 指定要下载的附件；
-    /// * `/archive/{id}` —— 打包下载全部附件。
+    /// * `/archive/{id}` —— 打包下载全部附件；
+    /// * `saved=1` —— 保存成功后复制链接的提示标记。
     query: String,
 }
 
+fn saved_query(request: &HttpRequest) -> String {
+    if request
+        .query_string()
+        .split('&')
+        .any(|pair| pair == "saved=1")
+    {
+        String::from("?saved=1")
+    } else {
+        String::new()
+    }
+}
+
 #[get("/auth/{id}")]
-pub async fn auth_upload(data: web::Data<AppState>, id: web::Path<String>) -> HttpResponse {
+pub async fn auth_upload(
+    data: web::Data<AppState>,
+    id: web::Path<String>,
+    request: HttpRequest,
+) -> HttpResponse {
     // get access to the pasta collection
     let mut pastas = data.pastas.lock().unwrap();
 
@@ -47,7 +64,7 @@ pub async fn auth_upload(data: web::Data<AppState>, id: web::Path<String>) -> Ht
                     status: String::from(""),
                     permission: String::from("read"),
                     path: String::from("uploaded"),
-                    query: String::new(),
+                    query: saved_query(&request),
                 }
                 .render()
                 .unwrap(),
@@ -64,6 +81,7 @@ pub async fn auth_upload(data: web::Data<AppState>, id: web::Path<String>) -> Ht
 pub async fn auth_upload_with_status(
     data: web::Data<AppState>,
     param: web::Path<(String, String)>,
+    request: HttpRequest,
 ) -> HttpResponse {
     // get access to the pasta collection
     let mut pastas = data.pastas.lock().unwrap();
@@ -87,7 +105,7 @@ pub async fn auth_upload_with_status(
                     status,
                     permission: String::from("read"),
                     path: String::from("uploaded"),
-                    query: String::new(),
+                    query: saved_query(&request),
                 }
                 .render()
                 .unwrap(),
