@@ -8,7 +8,7 @@
   <button id="copy-redirect-button" class="small-button" style="margin-right:
   0.5rem">{{ "Copy Redirect"|t }}</button>
   {%- endif %}
-  <a style="margin-right: 1rem" href="{{ args.public_path_as_str()  }}/raw/{{pasta.id_as_animals()}}">{{ "Raw Text Content"|t }}</a>
+  <a id="share-link" style="margin-right: 1rem" href="{% if args.short_path_as_str() != "" %}{{ args.short_path_as_str() }}/p/{{pasta.id_as_animals()}}{% else %}{{ args.public_path_as_str() }}/uploaded/{{pasta.id_as_animals()}}{% endif %}">{{ "Share"|t }}</a>
   {%- endif %} {% if args.qr && args.public_path_as_str() != "" %}
   <a style="margin-right: 1rem" href="{{ args.public_path_as_str()  }}/qr/{{pasta.id_as_animals()}}">{{ "QR"|t }}</a>
   {%- endif %} {% if pasta.can_edit() %}
@@ -168,6 +168,7 @@ pasta.file_embeddable() && !pasta.attachments.is_some() %}
   const copyURLBtn = document.getElementById("copy-url-button")
   const copyTextBtn = document.getElementById("copy-text-button")
   const copyRedirectBtn = document.getElementById("copy-redirect-button")
+  const shareLink = document.getElementById("share-link")
   var content = `{{ pasta.content_escaped() }}`
   const contentElement = document.getElementById("code");
   const url = (`{{ args.short_path_as_str()}}` === "") ? `{{ args.public_path_as_str() }}/uploaded/{{pasta.id_as_animals()}}` : `{{ args.short_path_as_str()}}/p/{{pasta.id_as_animals()}}`
@@ -318,6 +319,14 @@ pasta.file_embeddable() && !pasta.attachments.is_some() %}
   if (copyURLBtn) {
     copyURLBtn.addEventListener("click", () => {
       copyToClipboard(url, copyURLBtn, "Copy URL");
+    })
+  }
+  if (shareLink) {
+    shareLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      const originalLabel = shareLink.textContent;
+      const shareURL = new URL(shareLink.href, window.location.href).href;
+      copyToClipboard(shareURL, shareLink, originalLabel);
     })
   }
   if (copyRedirectBtn) {

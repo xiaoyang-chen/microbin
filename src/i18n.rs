@@ -230,6 +230,7 @@ static ZH: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
         "Copy" => "复制",
         "Copied" => "已复制",
         "Copy URL" => "复制链接",
+        "Share" => "分享",
         "Copy Text" => "复制文本",
         "Copy Redirect" => "复制跳转链接",
         "Download" => "下载",
