@@ -3,10 +3,11 @@ use crate::pasta::Pasta;
 use crate::util::animalnumbers::to_u64;
 use crate::util::auth;
 use crate::util::hashids::to_u64 as hashid_to_u64;
-use crate::util::misc::{decrypt_file, remove_expired};
+use crate::util::misc::{decrypt, decrypt_file, remove_expired};
 use crate::AppState;
 use actix_multipart::Multipart;
 use actix_web::{get, post, web, Error, HttpResponse};
+use actix_web::error::ErrorInternalServerError;
 use std::fs::File;
 use std::io::{Read, Seek, Write};
 use std::path::PathBuf;
@@ -29,6 +30,8 @@ fn find_index(pastas: &[Pasta], id: &str) -> Option<usize> {
 ///   `allow` 时才会走到这里，此时磁盘上的就是明文。
 /// * `password` 为 `Some(..)` 时，文件在磁盘上是密文，逐个解密后以原始文件名
 ///   放进 zip。
+///
+/// 上传的纯文字正文也会以 `{id}.txt` 的形式放进 zip；受 read 密码保护时先解密。
 fn build_zip(pasta: &Pasta, password: Option<&str>) -> Result<HttpResponse, Error> {
     let zip_file = tempfile::tempfile()?;
     let mut zip = zip::ZipWriter::new(zip_file);
@@ -36,6 +39,18 @@ fn build_zip(pasta: &Pasta, password: Option<&str>) -> Result<HttpResponse, Erro
     let options = SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Stored)
         .unix_permissions(0o755);
+
+    if !pasta.content.is_empty() {
+        let content = match password {
+            Some(password) => decrypt(&pasta.content, password).map_err(|_| {
+                actix_web::error::ErrorInternalServerError("Failed to decrypt content")
+            })?,
+            None => pasta.content.to_owned(),
+        };
+        let text_filename = format!("{}.txt", pasta.id_as_animals());
+        zip.start_file(text_filename, options).map_err(|e| ErrorInternalServerError(format!("create zip file fail: {}", e)))?;
+        zip.write_all(content.as_bytes()).map_err(|e| ErrorInternalServerError(format!("write zip file fail: {}", e)))?;
+    }
 
     let mut add_file_to_zip =
         |name: &str, path: PathBuf, password: Option<&str>| -> Result<(), std::io::Error> {
