@@ -17,6 +17,7 @@
   {% if pasta.can_remove() %}
   <a style="margin-right: 1rem" href="{{ args.public_path_as_str()  }}/remove/{{pasta.id_as_animals()}}">{{ "Remove"|t }}</a>
   {%- endif %}
+  <a style="margin-right: 1rem" href="{{ args.public_path_as_str() }}/">{{ "New Page"|t }}</a>
  
 </div>
 <div style="float: right; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">

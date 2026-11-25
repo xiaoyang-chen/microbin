@@ -214,6 +214,7 @@ static ZH: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     zh_table! {
         // ---- 通用 / 导航 ----
         "New" => "新建",
+        "New Page" => "新页面",
         "List" => "列表",
         "Guide" => "指南",
         "Welcome to MicroBin" => "欢迎使用 MicroBin",
