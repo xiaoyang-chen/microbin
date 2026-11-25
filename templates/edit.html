@@ -1,5 +1,6 @@
 {% include "header.html" %}
-<form action="{{ args.public_path_as_str() }}/{{ path }}/{{ pasta.id_as_animals() }}" method="POST" enctype="multipart/form-data">
+<form id="edit-form" action="{{ args.public_path_as_str() }}/{{ path }}/{{ pasta.id_as_animals() }}" method="POST"
+    enctype="multipart/form-data">
     <h4>
         {{ "Editing upload"|t }} '{{ pasta.id_as_animals() }}'
     </h4>
@@ -8,6 +9,50 @@
     <textarea style="width: 100%; min-height: 100px; font-family: monospace;" name="content" id="content" {% if status
         !="incorrect" %} autofocus {% endif %}>{{ pasta.content_textarea_safe() }}</textarea>
     <br>
+
+    {% if !args.no_file_upload %}
+    <input type="hidden" name="manage_files" value="1">
+
+    {% if pasta.file.is_some() || pasta.attachments.is_some() %}
+    <h4>{{ "Files"|t }}</h4>
+    <div id="existing-files" class="file-preview">
+        {% if pasta.file.is_some() %}
+        {% let file = pasta.file.as_ref().unwrap() %}
+        {% include "assets/edit_file_card.html" %}
+        {% endif %}
+        {% if pasta.attachments.is_some() %}
+        {% for file in pasta.attachments.as_ref().unwrap() %}
+        {% include "assets/edit_file_card.html" %}
+        {% endfor %}
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div id="file-select">
+        <label for="file" id="attach-file-button-label">
+            <a role="button" id="attach-file-button">{{ "Select or drop file attachment"|t }}</a>
+        </label>
+        <input type="file" id="file" name="file" multiple />
+    </div>
+
+    <div id="selected-files-section" style="display: none;">
+        <h4>{{ "Selected files"|t }}</h4>
+        <div id="file-preview" class="file-preview"></div>
+        <div style="width: 100%; overflow-x: auto;">
+            <table style="width: 100%; min-width: 480px;">
+                <thead>
+                    <tr>
+                        <th style="text-align: left;">{{ "Filename"|t }}</th>
+                        <th style="text-align: left;">{{ "Size"|t }}</th>
+                        <th style="text-align: right;">{{ "Action"|t }}</th>
+                    </tr>
+                </thead>
+                <tbody id="selected-files-body"></tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
     <div>
         {% if pasta.read_requires_password() %}
         <div style="float: left; height: 90px; margin-right: 20px;">
@@ -36,7 +81,6 @@
         <div style="float: right; height: 90px; justify-content: end;">
             <label for="password_field"></label><br>
             <input id="submit-button" type="submit" value="{{ "Save"|t }}" />
-            </td>
         </div>
     </div>
 
@@ -46,4 +90,344 @@
     <br>
     <br>
 </form>
+
+<script>
+    const editForm = document.getElementById('edit-form');
+
+    document.querySelectorAll('.remove-existing-file').forEach((button) => {
+        button.addEventListener('click', () => {
+            button.closest('.existing-file-card')?.remove();
+        });
+    });
+
+    // {% if !args.no_file_upload %}
+    const attachFileButton = document.getElementById('attach-file-button');
+    const dropContainer = document.getElementById('edit-form');
+    const hiddenFileButton = document.getElementById('file');
+    const selectedFilesSection = document.getElementById('selected-files-section');
+    const selectedFilesBody = document.getElementById('selected-files-body');
+    const filePreview = document.getElementById('file-preview');
+    const maxFileSizeMb = {% if pasta.read_requires_password() %}{{ args.max_file_size_encrypted_mb }}{% else %}{{ args.max_file_size_unencrypted_mb }}{% endif %};
+    let previewObjectUrls = [];
+    let selectedFiles = [];
+
+    function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 ** 2) return (bytes / 1024).toFixed(1).replace(/\.0$/, "") + " KB";
+        if (bytes < 1024 ** 3) return (bytes / 1024 ** 2).toFixed(1).replace(/\.0$/, "") + " MB";
+        return (bytes / 1024 ** 3).toFixed(1).replace(/\.0$/, "") + " GB";
+    }
+
+    function isImageFile(file) {
+        return file.type.startsWith("image/") ||
+            /\.(avif|bmp|gif|heif|ico|jpe?g|jfif|jxl|pjp|png|svg|tiff?|webp)$/i.test(file.name);
+    }
+
+    function isSameFile(first, second) {
+        return first.name === second.name &&
+            first.size === second.size &&
+            first.type === second.type &&
+            first.lastModified === second.lastModified;
+    }
+
+    function updateAttachFileButton(files) {
+        if (!attachFileButton) return;
+        if (files.length > 1) {
+            attachFileButton.textContent = "{{ "Attached:"|t }} " + files.length + " {{ "files"|t }}";
+        } else if (files.length === 1) {
+            attachFileButton.textContent = "{{ "Attached:"|t }} " + files[0].name;
+        } else {
+            attachFileButton.textContent = "{{ "Select or drop file attachment"|t }}";
+        }
+    }
+
+    function removeNewFile(index) {
+        setSelectedFiles(selectedFiles.filter((_, fileIndex) => fileIndex !== index));
+    }
+
+    function createRemoveSelectedFileButton(index, inline) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = inline
+            ? "remove-selected-file remove-selected-file-inline"
+            : "remove-selected-file";
+        button.textContent = "x";
+        button.title = "{{ "Remove"|t }}";
+        button.setAttribute("aria-label", "{{ "Remove"|t }}");
+        button.addEventListener("click", () => removeNewFile(index));
+        return button;
+    }
+
+    function renderSelectedFiles() {
+        const files = selectedFiles.slice();
+        updateAttachFileButton(files);
+        if (!selectedFilesSection || !selectedFilesBody || !filePreview) return;
+
+        previewObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+        previewObjectUrls = [];
+        selectedFilesBody.replaceChildren();
+        filePreview.replaceChildren();
+        selectedFilesSection.style.display = files.length > 0 ? "" : "none";
+
+        for (const [index, file] of files.entries()) {
+            const row = document.createElement("tr");
+            const nameCell = document.createElement("td");
+            nameCell.textContent = file.name;
+            const sizeCell = document.createElement("td");
+            sizeCell.textContent = formatFileSize(file.size);
+            const actionCell = document.createElement("td");
+            actionCell.style.textAlign = "right";
+            actionCell.appendChild(createRemoveSelectedFileButton(index, true));
+            row.append(nameCell, sizeCell, actionCell);
+            selectedFilesBody.appendChild(row);
+
+            if (isImageFile(file)) {
+                const objectUrl = URL.createObjectURL(file);
+                previewObjectUrls.push(objectUrl);
+                const card = document.createElement("div");
+                card.className = "file-card";
+                const image = document.createElement("img");
+                image.className = "embed-media";
+                image.src = objectUrl;
+                image.alt = file.name;
+                const meta = document.createElement("div");
+                meta.className = "file-meta";
+                const name = document.createElement("small");
+                name.textContent = file.name;
+                name.title = file.name;
+                const size = document.createElement("small");
+                size.textContent = formatFileSize(file.size);
+                meta.append(name, size);
+                card.append(image, createRemoveSelectedFileButton(index, false), meta);
+                filePreview.appendChild(card);
+            }
+        }
+    }
+
+    function setSelectedFiles(files) {
+        selectedFiles = files.slice();
+        if (hiddenFileButton) {
+            const dataTransfer = new DataTransfer();
+            selectedFiles.forEach((file) => dataTransfer.items.add(file));
+            hiddenFileButton.files = dataTransfer.files;
+        }
+        renderSelectedFiles();
+    }
+
+    function addFiles(files) {
+        const newFiles = files.filter(
+            (newFile) => !selectedFiles.some((existingFile) => isSameFile(existingFile, newFile))
+        );
+        if (newFiles.length === 0) return;
+        setSelectedFiles(selectedFiles.concat(newFiles));
+    }
+
+    function fileOversized() {
+        const hasOversizedFile = selectedFiles.some(
+            (file) => file.size / 1024 ** 2 > maxFileSizeMb
+        );
+        if (hasOversizedFile) {
+            attachFileButton.textContent = "{{ "Please select a file smaller than"|t }} " + maxFileSizeMb + " MB";
+            return true;
+        }
+        return false;
+    }
+
+    hiddenFileButton.addEventListener('change', function () {
+        addFiles(Array.from(this.files));
+        fileOversized();
+    });
+
+    dropContainer.ondragover = dropContainer.ondragenter = function (evt) {
+        evt.preventDefault();
+        attachFileButton.textContent = "{{ "Drop your file here"|t }}";
+    };
+
+    dropContainer.ondrop = function (evt) {
+        evt.preventDefault();
+        addFiles(Array.from(evt.dataTransfer.files));
+        fileOversized();
+    };
+
+    document.addEventListener('paste', function (evt) {
+        const items = evt.clipboardData?.items;
+        if (!items) return;
+
+        const pastedFiles = [];
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].kind === 'file') {
+                const file = items[i].getAsFile();
+                if (file) pastedFiles.push(file);
+            }
+        }
+
+        if (pastedFiles.length === 0) return;
+
+        evt.preventDefault();
+
+        const filesToAdd = [];
+        for (const newFile of pastedFiles) {
+            let fileToAdd = newFile;
+            const generic =
+                !newFile.name ||
+                /^image\.(png|jpe?g|gif|webp|bmp)$/i.test(newFile.name);
+
+            if (generic) {
+                const ext = (newFile.name && newFile.name.includes('.'))
+                    ? newFile.name.slice(newFile.name.lastIndexOf('.'))
+                    : (newFile.type && newFile.type.includes('/'))
+                        ? '.' + newFile.type.split('/')[1].replace('jpeg', 'jpg')
+                        : '.png';
+                const unique =
+                    'image-' +
+                    Date.now().toString(36) +
+                    '-' +
+                    Math.random().toString(36).slice(2, 8) +
+                    ext;
+                fileToAdd = new File([newFile], unique, {
+                    type: newFile.type,
+                    lastModified: newFile.lastModified,
+                });
+            }
+            filesToAdd.push(fileToAdd);
+        }
+
+        addFiles(filesToAdd);
+        fileOversized();
+    });
+
+    editForm.onsubmit = function (event) {
+        if (fileOversized()) {
+            event.preventDefault();
+        }
+    };
+
+    window.addEventListener('beforeunload', () => {
+        previewObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+    });
+    renderSelectedFiles();
+    // {%- endif %}
+</script>
+
+<style>
+    #file {
+        display: none;
+    }
+
+    #attach-file-button-label {
+        cursor: pointer;
+        display: inline-block;
+        padding: 0.5rem;
+        border: #2975D2 2px dotted;
+        border-radius: 6px;
+        padding-left: 1rem;
+        padding-right: 1rem;
+        margin-top: 0.5rem;
+        font-size: smaller;
+        text-align: center;
+    }
+
+    .file-preview {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin: 0.75rem 0;
+    }
+
+    .file-card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 220px;
+        padding: 0.5rem;
+        border-radius: 8px;
+        background-color: var(--background-body);
+    }
+
+    .media-link {
+        display: block;
+        width: 100%;
+    }
+
+    .file-card .embed-media {
+        display: block;
+        width: 100%;
+        max-height: 180px;
+        border-radius: 4px;
+        object-fit: contain;
+    }
+
+    .file-card .placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 120px;
+        background-color: #eee;
+        color: #555;
+    }
+
+    .file-meta {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        width: 100%;
+        margin-top: 0.35rem;
+        overflow: hidden;
+    }
+
+    .file-meta small {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .file-meta small:last-child {
+        color: gray;
+    }
+
+    .remove-selected-file {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.5rem;
+        height: 1.5rem;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        background-color: rgba(0, 0, 0, 0.6);
+        color: white;
+        cursor: pointer;
+        font-size: 0.9rem;
+        line-height: 1;
+    }
+
+    .file-card > .remove-selected-file {
+        position: absolute;
+        top: 0.25rem;
+        right: 0.25rem;
+        z-index: 1;
+    }
+
+    .remove-selected-file-inline {
+        width: auto;
+        height: auto;
+        padding: 0 0.35rem;
+        border-radius: 4px;
+        background-color: transparent;
+        color: gray;
+        font-size: 1rem;
+    }
+
+    .remove-selected-file-inline:hover {
+        color: #c00;
+    }
+
+    #selected-files-body td {
+        padding: 8px;
+        border-bottom: 1px solid #ccc;
+    }
+</style>
+
 {% include "footer.html" %}

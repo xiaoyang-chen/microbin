@@ -1,18 +1,25 @@
 use crate::args::Args;
 use crate::endpoints::errors::ErrorTemplate;
+use crate::pasta::PastaFile;
 use crate::util::animalnumbers::to_u64;
 use crate::util::auth;
 use crate::util::db::update;
 use crate::util::hashids::to_u64 as hashid_to_u64;
-use crate::util::misc::{decrypt, encrypt, remove_expired};
+use crate::util::misc::{decrypt, encrypt, encrypt_file, remove_expired};
 use crate::{AppState, Pasta, ARGS};
 use actix_multipart::Multipart;
-use actix_web::error::ErrorBadRequest;
+use actix_web::error::{ErrorBadRequest, ErrorInternalServerError};
 use actix_web::{get, post, web, Error, HttpResponse};
 use askama::Template;
 use crate::i18n::filters;
 use bytes::BytesMut;
+use bytesize::ByteSize;
 use futures::TryStreamExt;
+use std::collections::HashSet;
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use tempfile::NamedTempFile;
 
 #[derive(Template)]
 #[template(path = "edit.html", escape = "none")]
@@ -21,6 +28,12 @@ struct EditTemplate<'a> {
     args: &'a Args,
     path: &'a String,
     status: &'a String,
+}
+
+/// 编辑时上传的新文件。先落到临时文件，权限校验通过后再写入附件目录。
+struct UploadedEditFile {
+    file: PastaFile,
+    temp: NamedTempFile,
 }
 
 /// 编辑表单提交上来的字段。
@@ -36,6 +49,9 @@ struct EditForm {
     content: String,
     read_password: String,
     write_password: String,
+    keep_files: Vec<String>,
+    new_files: Vec<UploadedEditFile>,
+    manage_files: bool,
 }
 
 impl EditForm {
@@ -44,6 +60,9 @@ impl EditForm {
             content: String::new(),
             read_password: String::new(),
             write_password: String::new(),
+            keep_files: Vec::new(),
+            new_files: Vec::new(),
+            manage_files: false,
         }
     }
 }
@@ -51,12 +70,54 @@ impl EditForm {
 /// 解析编辑表单的 multipart 请求体。
 async fn parse_edit_form(mut payload: Multipart) -> Result<EditForm, Error> {
     let mut form = EditForm::new();
+    let max_parse_size = ARGS
+        .max_file_size_encrypted_mb
+        .max(ARGS.max_file_size_unencrypted_mb)
+        * 1024
+        * 1024;
 
     while let Some(mut field) = payload.try_next().await? {
         let name = match field.name() {
             Some(name) => name.to_string(),
             None => continue,
         };
+
+        if name == "file" {
+            if ARGS.no_file_upload {
+                continue;
+            }
+
+            let path = match field.content_disposition().and_then(|cd| cd.get_filename()) {
+                Some("") | None => continue,
+                Some(path) => path,
+            };
+
+            let mut file = match PastaFile::from_unsanitized(path) {
+                Ok(file) => file,
+                Err(e) => {
+                    log::warn!("Unsafe file name: {e:?}");
+                    continue;
+                }
+            };
+
+            let mut temp = NamedTempFile::new()
+                .map_err(|_| ErrorInternalServerError("Failed to create temporary file"))?;
+            let mut size = 0usize;
+            while let Some(chunk) = field.try_next().await? {
+                size += chunk.len();
+                if size > max_parse_size {
+                    return Err(ErrorBadRequest(crate::i18n::tr(
+                        "File exceeded size limit.",
+                    )));
+                }
+                temp.as_file_mut().write_all(&chunk)?;
+            }
+            temp.as_file_mut().flush()?;
+
+            file.size = ByteSize::b(size as u64);
+            form.new_files.push(UploadedEditFile { file, temp });
+            continue;
+        }
 
         let mut buf = BytesMut::new();
         while let Some(chunk) = field.try_next().await? {
@@ -70,11 +131,166 @@ async fn parse_edit_form(mut payload: Multipart) -> Result<EditForm, Error> {
             "content" => form.content = value,
             "read_password" | "password" => form.read_password = value,
             "write_password" => form.write_password = value,
+            "keep_file" => form.keep_files.push(value),
+            "manage_files" => {
+                form.manage_files = matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            }
             _ => {}
         }
     }
 
     Ok(form)
+}
+
+fn unique_file_name(name: &str, used_names: &HashSet<String>) -> String {
+    if !used_names.contains(name) {
+        return name.to_string();
+    }
+
+    let path = Path::new(name);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(name);
+    let extension = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|ext| format!(".{ext}"))
+        .unwrap_or_default();
+
+    let mut counter = 1;
+    loop {
+        let candidate = format!("{stem}-{counter}{extension}");
+        if !used_names.contains(&candidate) {
+            return candidate;
+        }
+        counter += 1;
+    }
+}
+
+fn stored_file_path(
+    pasta: &Pasta,
+    file: &PastaFile,
+    encrypted: bool,
+    is_primary: bool,
+) -> PathBuf {
+    if encrypted {
+        let named = PathBuf::from(format!(
+            "{}/attachments/{}/{}.enc",
+            ARGS.data_dir,
+            pasta.id_as_animals(),
+            file.name()
+        ));
+        if named.exists() || !is_primary {
+            named
+        } else {
+            PathBuf::from(format!(
+                "{}/attachments/{}/data.enc",
+                ARGS.data_dir,
+                pasta.id_as_animals()
+            ))
+        }
+    } else {
+        PathBuf::from(format!(
+            "{}/attachments/{}/{}",
+            ARGS.data_dir,
+            pasta.id_as_animals(),
+            file.name()
+        ))
+    }
+}
+
+fn apply_file_changes(pasta: &mut Pasta, form: &EditForm) -> Result<(), Error> {
+    let encrypted = pasta.read_requires_password();
+    let max_file_size_mb = if encrypted {
+        ARGS.max_file_size_encrypted_mb
+    } else {
+        ARGS.max_file_size_unencrypted_mb
+    };
+    let max_file_size_bytes = max_file_size_mb * 1024 * 1024;
+
+    if form
+        .new_files
+        .iter()
+        .any(|uploaded| uploaded.file.size.as_u64() > max_file_size_bytes as u64)
+    {
+        return Err(ErrorBadRequest(crate::i18n::tr("File exceeded size limit.")));
+    }
+
+    let mut existing_files = Vec::new();
+    if let Some(file) = &pasta.file {
+        existing_files.push(file.clone());
+    }
+    if let Some(attachments) = &pasta.attachments {
+        existing_files.extend(attachments.iter().cloned());
+    }
+
+    let kept_names: HashSet<&str> = form.keep_files.iter().map(String::as_str).collect();
+    let mut used_names: HashSet<String> = existing_files
+        .iter()
+        .map(|file| file.name().to_string())
+        .collect();
+    let attachment_dir = format!(
+        "{}/attachments/{}",
+        ARGS.data_dir,
+        pasta.id_as_animals()
+    );
+    fs::create_dir_all(&attachment_dir).map_err(|_| {
+        ErrorInternalServerError(crate::i18n::tr("Failed to create attachment directory"))
+    })?;
+
+    let mut new_files = Vec::new();
+    for uploaded in &form.new_files {
+        let name = unique_file_name(uploaded.file.name(), &used_names);
+        used_names.insert(name.clone());
+        let path = PathBuf::from(format!("{attachment_dir}/{name}"));
+
+        if fs::copy(uploaded.temp.path(), &path).is_err() {
+            let _ = fs::remove_file(&path);
+            return Err(ErrorInternalServerError("Failed to save uploaded file"));
+        }
+        if encrypted {
+            let path_str = path.to_string_lossy().to_string();
+            if encrypt_file(&form.read_password, &path_str).is_err() {
+                let _ = fs::remove_file(&path);
+                return Err(ErrorInternalServerError("Failed to encrypt file"));
+            }
+        }
+
+        new_files.push(PastaFile {
+            name,
+            size: ByteSize::b(uploaded.file.size.as_u64()),
+        });
+    }
+
+    for (index, file) in existing_files.iter().enumerate() {
+        if !kept_names.contains(file.name()) {
+            let path = stored_file_path(pasta, file, encrypted, index == 0);
+            if path.exists() {
+                if let Err(e) = fs::remove_file(&path) {
+                    log::warn!("Failed to remove file {}: {}", path.display(), e);
+                }
+            }
+        }
+    }
+
+    let mut files: Vec<PastaFile> = existing_files
+        .into_iter()
+        .filter(|file| kept_names.contains(file.name()))
+        .collect();
+    files.extend(new_files);
+    pasta.file = files.first().cloned();
+    pasta.attachments = if files.len() > 1 {
+        Some(files[1..].to_vec())
+    } else {
+        None
+    };
+
+    if files.is_empty() {
+        let _ = fs::remove_dir(&attachment_dir);
+    }
+
+    Ok(())
 }
 
 /// 应用一次编辑，返回 `true` 表示已保存。
@@ -83,32 +299,36 @@ async fn parse_edit_form(mut payload: Multipart) -> Result<EditForm, Error> {
 /// 1. **write**：`refuse` 一律拒绝；`password` 必须提供正确的 write 密码。
 /// 2. **read**：`password` 时必须提供正确的 read 密码，并用它重新加密正文
 ///    （正文与附件在存储时就是以 read 密码加密的）。
-fn apply_edit(pastas: &mut Vec<Pasta>, index: usize, form: &EditForm) -> bool {
+fn apply_edit(pastas: &mut Vec<Pasta>, index: usize, form: &EditForm) -> Result<bool, Error> {
     if !pastas[index].editable || pastas[index].write_refused() {
-        return false;
+        return Ok(false);
     }
 
     if pastas[index].write_requires_password()
         && !auth::verify_write_password(&pastas[index], &form.write_password)
     {
-        return false;
+        return Ok(false);
     }
 
     let content = if pastas[index].read_requires_password() {
         if !auth::verify_read_password(&pastas[index], &form.read_password) {
-            return false;
+            return Ok(false);
         }
         encrypt(&form.content, &form.read_password)
     } else {
         form.content.to_owned()
     };
 
+    if form.manage_files && !ARGS.no_file_upload {
+        apply_file_changes(&mut pastas[index], form)?;
+    }
+
     pastas[index].content.replace_range(.., &content);
 
     // save pasta in database
     update(Some(&*pastas), Some(&pastas[index]));
 
-    true
+    Ok(true)
 }
 
 fn redirect_to(location: &str) -> HttpResponse {
@@ -301,7 +521,7 @@ pub async fn post_submit_edit_private(
         None => return Ok(error_page()),
     };
 
-    if !apply_edit(&mut pastas, index, &form) {
+    if !apply_edit(&mut pastas, index, &form)? {
         return Ok(redirect_to(&format!(
             "{}/edit/{}/incorrect",
             ARGS.public_path_as_str(),
@@ -339,7 +559,7 @@ pub async fn post_edit(
         None => return Ok(error_page()),
     };
 
-    if !apply_edit(&mut pastas, index, &form) {
+    if !apply_edit(&mut pastas, index, &form)? {
         return Ok(redirect_to(&format!(
             "{}/edit/{}/incorrect",
             ARGS.public_path_as_str(),

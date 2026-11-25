@@ -1,0 +1,27 @@
+<div class="file-card existing-file-card">
+    <input type="hidden" name="keep_file" value="{{ file.name_attr_escaped()|safe }}" />
+    <button type="button" class="remove-selected-file remove-existing-file" title="{{ "Remove"|t }}"
+        aria-label="{{ "Remove"|t }}">x</button>
+
+    {% if pasta.read_requires_password() %}
+    <div class="embed-media placeholder"><span>{{ file.extension_html_escaped()|safe }}</span></div>
+    {% else %}
+        {% if file.is_image() %}
+        <a href="{{ args.public_path_as_str()}}/file/{{pasta.id_as_animals()}}?fname={{ file.url_encoded_name() }}&preview=true"
+            target="_blank" class="media-link">
+            <img class="embed-media" src="{{ args.public_path_as_str()}}/file/{{pasta.id_as_animals()}}?fname={{ file.url_encoded_name() }}"
+                alt="{{ file.name_attr_escaped()|safe }}" />
+        </a>
+        {% else if file.is_video() %}
+        <video class="embed-media" controls
+            src="{{ args.public_path_as_str()}}/file/{{pasta.id_as_animals()}}?fname={{ file.url_encoded_name() }}"></video>
+        {% else %}
+        <div class="embed-media placeholder"><span>{{ file.extension_html_escaped()|safe }}</span></div>
+        {% endif %}
+    {% endif %}
+
+    <div class="file-meta">
+        <small title="{{ file.name_attr_escaped()|safe }}">{{ file.name_html_escaped()|safe }}</small>
+        <small>{{ file.size }}</small>
+    </div>
+</div>

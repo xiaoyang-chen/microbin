@@ -41,6 +41,16 @@ impl PastaFile {
         self.name.strip_suffix(".enc").unwrap_or(&self.name)
     }
 
+    pub fn name_html_escaped(&self) -> String {
+        html_escape::encode_text(&self.name).to_string()
+    }
+
+    pub fn name_attr_escaped(&self) -> String {
+        self.name_html_escaped()
+            .replace('"', "&quot;")
+            .replace('\'', "&#x27;")
+    }
+
     pub fn is_image(&self) -> bool {
         let lowercase_name = self.name.to_lowercase();
         let extensions = [
@@ -68,6 +78,10 @@ impl PastaFile {
             .and_then(std::ffi::OsStr::to_str)
             .unwrap_or("FILE")
             .to_uppercase()
+    }
+
+    pub fn extension_html_escaped(&self) -> String {
+        html_escape::encode_text(&self.extension()).to_string()
     }
 }
 
