@@ -1,4 +1,5 @@
 use crate::args::Args;
+use crate::endpoints::create::{expiration_to_timestamp, is_valid_expiration, EXPIRATION_OPTIONS};
 use crate::endpoints::errors::ErrorTemplate;
 use crate::pasta::PastaFile;
 use crate::util::animalnumbers::to_u64;
@@ -19,6 +20,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tempfile::NamedTempFile;
 
 #[derive(Template)]
@@ -52,6 +54,9 @@ struct EditForm {
     keep_files: Vec<String>,
     new_files: Vec<UploadedEditFile>,
     manage_files: bool,
+    expiration: Option<String>,
+    burn_after: Option<u64>,
+    extension: Option<String>,
 }
 
 impl EditForm {
@@ -63,6 +68,9 @@ impl EditForm {
             keep_files: Vec::new(),
             new_files: Vec::new(),
             manage_files: false,
+            expiration: None,
+            burn_after: None,
+            extension: None,
         }
     }
 }
@@ -138,11 +146,60 @@ async fn parse_edit_form(mut payload: Multipart) -> Result<EditForm, Error> {
                     "1" | "true" | "yes" | "on"
                 )
             }
+            "expiration" => form.expiration = Some(value),
+            "burn_after" if ARGS.enable_burn_after => {
+                form.burn_after = Some(value.trim().parse::<u64>().map_err(|_| {
+                    ErrorBadRequest(crate::i18n::tr("Invalid burn after value."))
+                })?)
+            }
+            "syntax_highlight" if ARGS.highlightsyntax => form.extension = Some(value),
             _ => {}
         }
     }
 
     Ok(form)
+}
+
+fn is_valid_syntax(value: &str) -> bool {
+    matches!(
+        value,
+        "none"
+            | "auto"
+            | "sh"
+            | "c"
+            | "cpp"
+            | "cs"
+            | "pas"
+            | "erl"
+            | "go"
+            | "hs"
+            | "html"
+            | "lua"
+            | "lisp"
+            | "java"
+            | "js"
+            | "kt"
+            | "py"
+            | "php"
+            | "r"
+            | "rs"
+            | "rb"
+            | "sc"
+            | "swift"
+            | "json"
+            | "yaml"
+            | "xml"
+    )
+}
+
+fn current_timestamp() -> i64 {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_secs() as i64,
+        Err(_) => {
+            log::error!("SystemTime before UNIX EPOCH!");
+            0
+        }
+    }
 }
 
 fn unique_file_name(name: &str, used_names: &HashSet<String>) -> String {
@@ -319,11 +376,49 @@ fn apply_edit(pastas: &mut Vec<Pasta>, index: usize, form: &EditForm) -> Result<
         form.content.to_owned()
     };
 
+    let new_expiration = match form.expiration.as_deref() {
+        None | Some("") | Some("keep") => None,
+        Some(value) => {
+            if !EXPIRATION_OPTIONS.contains(&value)
+                || !is_valid_expiration(value, &ARGS.max_expiry)
+                || (value == "never" && !ARGS.eternal_pasta)
+            {
+                return Err(ErrorBadRequest(crate::i18n::tr(
+                    "Expiration exceeds maximum allowed",
+                )));
+            }
+            Some(expiration_to_timestamp(value, current_timestamp()))
+        }
+    };
+
+    let new_extension = if ARGS.highlightsyntax {
+        match form.extension.as_deref() {
+            Some(value) if !is_valid_syntax(value) => {
+                return Err(ErrorBadRequest(crate::i18n::tr("Invalid syntax option.")));
+            }
+            Some(value) => Some(value.to_string()),
+            None => None,
+        }
+    } else {
+        None
+    };
+
     if form.manage_files && !ARGS.no_file_upload {
         apply_file_changes(&mut pastas[index], form)?;
     }
 
     pastas[index].content.replace_range(.., &content);
+    if let Some(expiration) = new_expiration {
+        pastas[index].expiration = expiration;
+    }
+    if ARGS.enable_burn_after {
+        if let Some(burn_after) = form.burn_after {
+            pastas[index].burn_after_reads = burn_after;
+        }
+    }
+    if let Some(extension) = new_extension {
+        pastas[index].extension = extension;
+    }
 
     // save pasta in database
     update(Some(&*pastas), Some(&pastas[index]));

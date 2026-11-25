@@ -59,7 +59,7 @@ pub async fn index_with_status(param: web::Path<String>) -> HttpResponse {
     );
 }
 
-const EXPIRATION_OPTIONS: &[&str] = &[
+pub const EXPIRATION_OPTIONS: &[&str] = &[
     "1min",
     "10min",
     "1hour",

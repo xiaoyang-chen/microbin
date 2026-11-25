@@ -389,6 +389,7 @@ static ZH: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
         "Type something here." => "在此输入内容。",
         "Uploader Password" => "上传密码",
         "Never Expire" => "永不过期",
+        "Keep current expiration" => "保持当前有效期",
         "No Limit" => "不限次数",
         "First Read" => "首次阅读后",
         "10th Read" => "第 10 次阅读后",
@@ -429,6 +430,8 @@ static ZH: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
         "Invalid UTF-8 in content" => "内容不是合法的 UTF-8 编码",
         "File exceeded size limit." => "文件超出大小限制。",
         "Failed to create attachment directory" => "创建附件目录失败",
+        "Invalid burn after value." => "阅后即焚次数无效。",
+        "Invalid syntax option." => "语法选项无效。",
         "Invalid login details." => "登录信息无效。",
 
         // ---- 页脚 ----
