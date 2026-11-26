@@ -98,7 +98,7 @@ echo -e "\033[1m完成。\033[0m"
 if [ -n "$public_path" ]; then
     echo "  访问地址：$public_path"
 else
-    echo "  访问地址：http://localhost:${port}（未设置 MICROBIN_PUBLIC_PATH，二维码与复制链接不可用）"
+    echo "  访问地址：https://localhost:${port}（自签证书会触发浏览器警告；未设置 MICROBIN_PUBLIC_PATH，二维码与复制链接不可用）"
 fi
 echo "  配置文件：$install_dir/.env"
 echo "  数据卷　：microbin_data（docker volume ls 可见）"

@@ -32,6 +32,29 @@ The Chinese README ([README.md](README.md)) documents this fork's differences:
 per-request language negotiation and the three independent permissions
 (`read` / `write` / `list`).
 
+### HTTPS
+
+MicroBin listens over HTTPS by default. If no certificate is configured, a
+self-signed certificate is generated under `${MICROBIN_DATA_DIR}/tls/` on the
+first start and reused on subsequent starts. Browsers will warn until you trust
+it or configure a real certificate:
+
+```bash
+microbin --tls-cert /path/to/fullchain.pem --tls-key /path/to/privkey.pem
+```
+
+If you later change the hostname in `public_path` / `short_path`, delete the
+`tls/` directory and restart to regenerate the certificate for the new name.
+
+Supplying both `--tls-cert` and `--tls-key` also enables HTTPS automatically.
+When running in Docker, mount the certificate files into the container if you
+use your own certificate. To listen over plain HTTP instead (for example behind
+a TLS-terminating reverse proxy), set `MICROBIN_HTTPS=false` (or pass
+`--https false`). Builds made with `--no-default-features --features no-c-deps`
+have no TLS support and default to HTTP. When HTTPS is enabled,
+`MICROBIN_PUBLIC_PATH` should also start with `https://`, otherwise browsers
+may block the page assets as mixed content.
+
 On our website [microbin.eu](https://microbin.eu), you will find the following:
 
 - [Screenshots](https://microbin.eu/screenshots/)

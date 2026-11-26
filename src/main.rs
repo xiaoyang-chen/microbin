@@ -33,6 +33,8 @@ pub mod util {
     pub mod misc;
     pub mod syntaxhighlighter;
     pub mod telemetry;
+    #[cfg(feature = "__default-tls")]
+    pub mod tls;
     pub mod version;
     pub mod http_client;
 }
@@ -89,11 +91,23 @@ async fn main() -> std::io::Result<()> {
         .filter(None, LevelFilter::Info)
         .init();
 
+    let scheme = if ARGS.https_enabled() { "https" } else { "http" };
     log::info!(
-        "MicroBin starting on http://{}:{}",
+        "MicroBin starting on {}://{}:{}",
+        scheme,
         ARGS.bind.to_string(),
         ARGS.port.to_string()
     );
+
+    #[cfg(not(feature = "__default-tls"))]
+    {
+        if ARGS.https_enabled() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "HTTPS support is unavailable in this build; use the default features (OpenSSL) to enable it",
+            ));
+        }
+    }
 
     for warning in ARGS.config_warnings() {
         log::warn!("Config check: {}", warning);
@@ -122,7 +136,7 @@ async fn main() -> std::io::Result<()> {
         start_telemetry_thread();
     }
 
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new()
             .app_data(data.clone())
             // 语言中间件放在最外层：它要为**整个请求**建立 task-local 作用域，
@@ -192,8 +206,17 @@ async fn main() -> std::io::Result<()> {
             )
             .default_service(web::route().to(errors::not_found))
     })
-    .bind((ARGS.bind, ARGS.port))?
-    .workers(ARGS.threads as usize)
-    .run()
-    .await
+    .workers(ARGS.threads as usize);
+
+    #[cfg(feature = "__default-tls")]
+    let server = if ARGS.https_enabled() {
+        server.bind_openssl((ARGS.bind, ARGS.port), util::tls::acceptor_builder()?)?
+    } else {
+        server.bind((ARGS.bind, ARGS.port))?
+    };
+
+    #[cfg(not(feature = "__default-tls"))]
+    let server = server.bind((ARGS.bind, ARGS.port))?;
+
+    server.run().await
 }

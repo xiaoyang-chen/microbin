@@ -78,6 +78,26 @@ pub struct Args {
     #[clap(short, long, env="MICROBIN_BIND", default_value_t = IpAddr::from([0, 0, 0, 0]))]
     pub bind: IpAddr,
 
+    /// Serve HTTPS. Enabled by default in builds with TLS support (the default feature set); set it to false to listen over plain HTTP. If both --tls-cert and --tls-key are omitted, a self-signed certificate is generated under {data-dir}/tls on first start and reused afterwards.
+    #[clap(
+        long,
+        env = "MICROBIN_HTTPS",
+        action = clap::ArgAction::Set,
+        min_values = 0,
+        max_values = 1,
+        default_missing_value = "true",
+        default_value_t = cfg!(feature = "__default-tls")
+    )]
+    pub https: bool,
+
+    /// PEM certificate chain to use for HTTPS. Must be supplied together with --tls-key. Setting it also enables HTTPS.
+    #[clap(long, env = "MICROBIN_TLS_CERT")]
+    pub tls_cert: Option<String>,
+
+    /// PEM private key to use for HTTPS. Must be supplied together with --tls-cert. Setting it also enables HTTPS.
+    #[clap(long, env = "MICROBIN_TLS_KEY")]
+    pub tls_key: Option<String>,
+
     /// Whether an upload may be set to `list=no` (hidden from the public listing). This is also enforced server-side: posting `list=no` to /uploaded while the flag is false is rejected with HTTP 400.
     #[clap(long, env = "MICROBIN_ENABLE_UNLISTED", action = clap::ArgAction::Set, default_value_t = true)]
     pub enable_unlisted: bool,
@@ -251,6 +271,26 @@ impl Args {
         }
     }
 
+    /// HTTPS 默认开启；显式关闭后，只要配置了证书或私钥仍会自动开启。
+    pub fn https_enabled(&self) -> bool {
+        self.https || self.tls_cert_path().is_some() || self.tls_key_path().is_some()
+    }
+
+    /// 空字符串视作未配置；compose 会为未设置的变量传入空值。
+    pub fn tls_cert_path(&self) -> Option<&str> {
+        self.tls_cert
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+
+    pub fn tls_key_path(&self) -> Option<&str> {
+        self.tls_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+
     /// 新建上传页附件视图的默认选项。
     ///
     /// `--default-view` 的取值会被**直接插进页面 JS 的字符串字面量**，因此这里做
@@ -297,6 +337,19 @@ impl Args {
                 "MICROBIN_DEFAULT_PERMISSIONS asks for list=no, but unlisted uploads \
                  are disabled (MICROBIN_ENABLE_UNLISTED=false). \
                  The new-upload form will fall back to list=yes."
+            );
+        }
+
+        if self.https_enabled()
+            && self
+                .public_path
+                .as_ref()
+                .map_or(false, |path| path.0.starts_with("http://"))
+        {
+            warnings.push(
+                "HTTPS is enabled, but --public-path starts with http://. Links and assets \
+                 rendered from that base URL will still use http:// and may be blocked as \
+                 mixed content. Use an https:// public path.",
             );
         }
 
@@ -366,6 +419,9 @@ impl Args {
             highlightsyntax: self.highlightsyntax,
             port: self.port,
             bind: self.bind,
+            https: self.https,
+            tls_cert: None,
+            tls_key: None,
             enable_unlisted: self.enable_unlisted,
             pure_html: self.pure_html,
             json_db: self.json_db,

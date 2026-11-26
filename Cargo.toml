@@ -67,7 +67,7 @@ optional = true
 default = ["__default-tls", "__zstd", "__syntect-fast", "dep:rusqlite"]
 no-c-deps = ["__rustcrypto-tls", "__syntect-rust"]
 
-__default-tls = ["reqwest/default-tls", "dep:openssl"]
+__default-tls = ["reqwest/default-tls", "dep:openssl", "actix-web/openssl"]
 __rustcrypto-tls = ["reqwest/rustls-tls-manual-roots-no-provider", "dep:rustls", "dep:rustls-rustcrypto", "webpki-roots"]
 __syntect-fast = ["syntect/default-onig"]
 __syntect-rust = ["syntect/default-fancy"]

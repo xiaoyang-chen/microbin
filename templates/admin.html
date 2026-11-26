@@ -301,6 +301,18 @@
                 <td colspan="2"></td>
             </tr>
             <tr>
+                <td><span class="arg-name">https</span>
+                <span class="arg-desc">{{ "Serve over HTTPS (a self-signed certificate is generated when no TLS files are configured)"|t }}</span></td>
+                <td>{{ args.https }}</td>
+                <td><span class="arg-name">tls_cert</span>
+                <span class="arg-desc">{{ "PEM certificate chain path; setting it also enables HTTPS"|t }}</span></td>
+                {% if args.tls_cert.as_ref().is_some() %}
+                <td>{{ "set"|t }}</td>
+                {% else %}
+                <td>{{ "unset"|t }}</td>
+                {% endif %}
+            </tr>
+            <tr>
                 <td colspan="4" class="arg-group">{{ "Storage"|t }}</td>
             </tr>
             <tr>

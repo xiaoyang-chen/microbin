@@ -33,6 +33,22 @@ docker run -d --name microbin -p 8080:8080 \
 
 > ⚠️ 默认管理员账号是 `admin` / `m1cr0b1n`。**公网部署前务必改掉**（`.env` 里的 `MICROBIN_ADMIN_USERNAME` 与 `MICROBIN_ADMIN_PASSWORD`），否则管理页对所有人敞开。
 
+## HTTPS
+
+默认以 HTTPS 监听。若没有同时配置证书和私钥，首次启动时会在 `${MICROBIN_DATA_DIR}/tls/` 下生成自签证书 `cert.pem` 与私钥 `key.pem`，之后重启会复用，不会每次换一张。自签证书对 `public_path` / `short_path` 的主机名、`localhost`、回环地址以及显式 `--bind` 的 IP 有效。访问地址相应为 `https://...`。
+
+如果之后改了 `public_path` / `short_path` 的域名，删掉 `tls/` 目录再重启，证书会按新域名重新生成。
+
+浏览器仍会提示自签证书不受信任；公网使用建议换成受信任证书：
+
+```bash
+microbin --tls-cert /path/to/fullchain.pem --tls-key /path/to/privkey.pem
+```
+
+只配置 `--tls-cert` 和 `--tls-key` 也会自动启用 HTTPS；两者必须同时提供。Docker 部署时请把证书目录挂载进容器，或直接使用自动生成的自签证书。
+
+如果 HTTPS 由反向代理终止、后端只想用明文 HTTP，可设 `MICROBIN_HTTPS=false`（命令行写作 `--https false`）退回 HTTP。以 `--no-default-features --features no-c-deps` 构建时没有 TLS 支持，默认监听 HTTP。注意：启用 HTTPS 后 `MICROBIN_PUBLIC_PATH` 也要用 `https://` 开头，否则页面资源会被浏览器的混合内容策略拦截。
+
 ## 界面语言
 
 语言**按访问者逐个请求协商**，切换不需要重启，也不需要为不同用户部署多份实例。导航栏右侧点「中文 / English」即可，选择会记住。
